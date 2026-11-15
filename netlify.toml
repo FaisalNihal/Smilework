@@ -1,0 +1,21 @@
+# Netlify settings for the Smile Corner phone app (this folder is the whole website; no build step).
+# In the Netlify screen: Base directory = app, Build command = (empty), Publish directory = app
+
+# The service worker must always be checked for updates, or phones keep an old app version.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/config.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(self), geolocation=(self), microphone=()"
+    X-Frame-Options = "DENY"

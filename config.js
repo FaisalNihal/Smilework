@@ -8,7 +8,7 @@
  * With API_URL empty, the app runs in demo mode with sample data. Keep ALLOW_DEMO_PARAM false in production.
  */
 window.APP_CONFIG = {
-  API_URL: '',
+  API_URL: 'https://script.google.com/macros/s/AKfycbylPF1ec4LTLjK2p3pSo5IM-qVb_FRmifWtJyy41632ceANn5CLQjsd8VJIFR-VkvWfmA/exec',
   PREMIUM_MODEL_URL: '',
   GUIDE_MODEL_URL: '',
   ALLOW_DEMO_PARAM: false,

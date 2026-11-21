@@ -3,7 +3,7 @@
  * and (on Android Chrome) sends waiting photos in the background when the network comes back.
  * Bump CACHE whenever you change any app file, so phones pick up the new version.
  */
-const CACHE = 'smile-corner-v2.1.0';
+const CACHE = 'smile-corner-v2.1.1';
 const APP_FILES = ['./', 'index.html', 'app.js', 'camera.js', 'premium.js', 'demo.js', 'config.js', 'manifest.json',
   'icons/icon-192.png', 'icons/icon-512.png'];
 // The Bangla font. Saved at install so the app looks right offline from the first day.

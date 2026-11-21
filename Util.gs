@@ -26,6 +26,13 @@ function json_(obj) {
 
 function fmt_(date, pattern) { return Utilities.formatDate(date, TZ, pattern); }
 function dayKey_(date) { return fmt_(date, 'yyyy-MM-dd'); }
+const isDateKey_ = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
+/** '2026-11-21' -> '2026-12-01' */
+function firstOfNextMonth_(key) {
+  let y = Number(key.slice(0, 4)), m = Number(key.slice(5, 7)) + 1;
+  if (m > 12) { m = 1; y++; }
+  return y + '-' + ('0' + m).slice(-2) + '-01';
+}
 function monthKey_(date) { return fmt_(date, 'yyyy-MM'); }
 /** Midnight in Dhaka for a yyyy-MM-dd key, as a real Date. */
 function dateFromKey_(key) { return Utilities.parseDate(key, TZ, 'yyyy-MM-dd'); }
@@ -152,11 +159,40 @@ function pjpRows_() {
     region: norm_(r[PJP.REGION]), zone: norm_(r[PJP.ZONE]), territory: norm_(r[PJP.TERRITORY]),
     dbCode: norm_(r[PJP.DB_CODE]), dbName: norm_(r[PJP.DB_NAME]), code: upper_(r[PJP.CODE]),
     name: norm_(r[PJP.NAME]), slab: norm_(r[PJP.SLAB]), routeCode: norm_(r[PJP.ROUTE_CODE]),
-    route: norm_(r[PJP.ROUTE]), visitDay: norm_(r[PJP.VISIT_DAY]), merch: norm_(r[PJP.MERCH]),
+    route: norm_(r[PJP.ROUTE]), visitDay: pjpVisitDay_(r[PJP.VISIT_DAY]), merch: norm_(r[PJP.MERCH]),
     status: norm_(r[PJP.STATUS]), unit: norm_(r[PJP.UNIT]), cluster: norm_(r[PJP.CLUSTER]),
     lat: num_(r[PJP.LAT]), lon: num_(r[PJP.LON])
   }));
   return PJP_CACHE_;
+}
+
+/**
+ * PJP Visit Day cell -> a date 'yyyy-MM-dd' (date-wise PJP) or the original text (weekday PJP, e.g. "Sunday").
+ * Accepts a real date cell, a date-formatted number, "2026-11-01", day-first "01/11/2026" or "1-11-2026",
+ * and month names ("01-Nov-2026", "1 November 2026", "Nov 1, 2026").
+ */
+const PJP_MONTHS_ = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+function pjpVisitDay_(v) {
+  if (Object.prototype.toString.call(v) === '[object Date]') return isNaN(v.getTime()) ? '' : dayKey_(v);
+  if (typeof v === 'number' && v > 20000 && v < 80000) {           // a date cell formatted as a number (Sheets serial)
+    return Utilities.formatDate(new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000), 'UTC', 'yyyy-MM-dd');
+  }
+  const s = norm_(v);
+  const key = (y, m, d) => {
+    if (y < 100) y += 2000;
+    const t = new Date(Date.UTC(y, m - 1, d));
+    if (m < 1 || m > 12 || t.getUTCMonth() !== m - 1 || t.getUTCDate() !== d) return '';
+    return y + '-' + ('0' + m).slice(-2) + '-' + ('0' + d).slice(-2);
+  };
+  let x = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (x) return key(+x[1], +x[2], +x[3]) || s;
+  x = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+  if (x) return key(+x[3], +x[2], +x[1]) || s;
+  x = s.match(/^(\d{1,2})[\s\-]+([A-Za-z]{3,})[\s\-,]+(\d{2,4})$/);
+  if (x && PJP_MONTHS_.indexOf(x[2].slice(0, 3).toLowerCase()) >= 0) return key(+x[3], PJP_MONTHS_.indexOf(x[2].slice(0, 3).toLowerCase()) + 1, +x[1]) || s;
+  x = s.match(/^([A-Za-z]{3,})\s+(\d{1,2}),?\s+(\d{2,4})$/);
+  if (x && PJP_MONTHS_.indexOf(x[1].slice(0, 3).toLowerCase()) >= 0) return key(+x[3], PJP_MONTHS_.indexOf(x[1].slice(0, 3).toLowerCase()) + 1, +x[2]) || s;
+  return s;
 }
 
 function pjpByCode_() {

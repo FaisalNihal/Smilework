@@ -4,7 +4,7 @@
  * Secrets (Gemini key, token secret) live in Script Properties, never in code.
  */
 
-const APP_VERSION = '2.1.0';
+const APP_VERSION = '2.1.1';
 const TZ = 'Asia/Dhaka';
 
 const TAB = {
@@ -83,7 +83,7 @@ const USERS_HEADERS = ['Name', 'PIN', 'Role', 'Join Date', 'Active'];
 const SKU_HEADERS = ['SKU ID', 'Name', 'Variant', 'Pack Size', 'Group', 'Description', 'Reference Photo IDs', 'Active'];
 const SUMMARY_HEADERS = ['Date', 'Merchandiser', 'Region', 'DB Code', 'Routes Visited', 'Planned Outlets',
   'Planned Display', 'Planned Regular', 'Visited Outlets', 'Display Visited', 'Regular Visited',
-  'Check-in', 'First Photo', 'Last Photo', 'Hours', 'Flagged Photos', 'Premium Found', 'Conversions'];
+  'Check-in', 'First Photo', 'Last Photo', 'Hours', 'Flagged Photos', 'Premium Found', 'Conversions', 'Planned Visited'];
 const ATTENDANCE_HEADERS = ['Month', 'Date', 'Region', 'Distributor', 'Merchandiser', 'Status',
   'Planned Outlet', 'Visited Outlet', 'Spend (Hour)'];
 const CHECKIN_HEADERS = ['Date', 'Merchandiser', 'Time', 'Latitude', 'Longitude', 'GPS Accuracy (m)'];

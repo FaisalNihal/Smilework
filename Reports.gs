@@ -1,8 +1,15 @@
 /**
  * Daily_Summary and CM_Attendance.
- * Built from the Images rows (who actually submitted, recorded at upload time),
- * so editing PJP later never rewrites past days. Each hourly run recalculates
- * only the last `report_days` days; older rows stay as they are.
+ * Built from the Images rows (who actually submitted, recorded at upload time).
+ * Each hourly run recalculates only the last `report_days` days; older rows stay as they are.
+ *
+ * Planned outlets:
+ *  - Date-wise PJP (Visit Day holds dates): the outlets in the PJP with the merchandiser's name and that date.
+ *    Every planned day gets a row, even with 0 photos. Days of a month that is no longer in the PJP
+ *    (last month, after next month's PJP was pasted in) are never recalculated, so their plan is kept.
+ *  - Weekday PJP (old format): all outlets of the routes the merchandiser took photos in that day.
+ * Planned Visited = how many of that day's planned outlets got a photo that day.
+ * Visited Outlets also counts off-plan (catch-up) outlets.
  */
 
 function updateReports() {
@@ -25,12 +32,33 @@ function buildReports_(days) {
   const s = getSettings_();
   const now = new Date();
   const todayKey = dayKey_(now);
-  const startKey = dayKey_(new Date(now.getTime() - (days - 1) * 864e5));
-  const rows = readImages_(dateFromKey_(startKey), IMG.status);
-  const rejected = rejectedIds_();
+  let startKey = dayKey_(new Date(now.getTime() - (days - 1) * 864e5));
   const pjp = pjpRows_();
 
-  // Planned outlets per merchandiser + route, and each merchandiser's home region/DB.
+  // Date-wise PJP: planned outlets per date + merchandiser.
+  const dayPlan = {}, datedMerch = {}, planMonths = {};
+  pjp.forEach(o => {
+    if (!o.merch || !isDateKey_(o.visitDay)) return;
+    const mk = o.merch.toLowerCase();
+    datedMerch[mk] = true;
+    planMonths[o.visitDay.slice(0, 7)] = true;
+    const k = o.visitDay + '|' + mk;
+    const p = dayPlan[k] = dayPlan[k] || { day: o.visitDay, merch: o.merch, region: o.region, dbCode: o.dbCode, total: 0, display: 0, regular: 0, codes: {} };
+    if (p.codes[o.code]) return;
+    p.codes[o.code] = true;
+    p.total++;
+    if (isDisplayStatus_(o.status)) p.display++; else p.regular++;
+  });
+  // Keep earlier months as they are once their PJP has been replaced (this month is always recalculated).
+  if (Object.keys(planMonths).length) {
+    const thisMonth = todayKey.slice(0, 7);
+    while (startKey.slice(0, 7) < thisMonth && !planMonths[startKey.slice(0, 7)]) startKey = firstOfNextMonth_(startKey);
+  }
+
+  const rows = readImages_(dateFromKey_(startKey), IMG.status);
+  const rejected = rejectedIds_();
+
+  // Weekday PJP: planned outlets per merchandiser + route. And each merchandiser's home region/DB.
   const plan = {}, home = {};
   pjp.forEach(o => {
     if (!o.merch) return;
@@ -88,17 +116,32 @@ function buildReports_(days) {
   const summary = Object.keys(groups).map(key => {
     const g = groups[key];
     const mk = g.merch.toLowerCase();
-    let pt = 0, pd = 0, pr = 0;
-    g.routes.forEach(route => {
-      const p = plan[mk + '|' + route];
-      if (p) { pt += p.total; pd += p.display; pr += p.regular; }
-    });
+    let pt = 0, pd = 0, pr = 0, pv = 0;
+    if (datedMerch[mk]) {
+      const p = dayPlan[key];
+      if (p) { pt = p.total; pd = p.display; pr = p.regular; g.codes.forEach(c => { if (p.codes[c]) pv++; }); }
+    } else {
+      const seen = {};
+      g.routes.forEach(route => {
+        const p = plan[mk + '|' + route];
+        if (!p) return;
+        pt += p.total; pd += p.display; pr += p.regular;
+        g.codes.forEach(c => { if (p.codes[c] && !seen[c]) { seen[c] = true; pv++; } });
+      });
+    }
     const ci = checkins[key] || '';
     const startT = ci && ci < g.first ? ci : g.first;
     const hours = Math.round((g.last - startT) / 36e5 * 100) / 100;
     return [dateFromKey_(g.day), g.merch, Array.from(g.regions).join(', '), Array.from(g.dbs).join(', '),
       g.routes.size, pt, pd, pr, g.codes.size, g.disp.size, g.reg.size, ci, g.first, g.last, hours, g.flagged, g.premium,
-      convCount[key] || 0];
+      convCount[key] || 0, pv];
+  });
+  // Planned days with no counted photo still get a row: planned N, visited 0.
+  Object.keys(dayPlan).forEach(key => {
+    const p = dayPlan[key];
+    if (groups[key] || p.day < startKey || p.day > todayKey) return;
+    summary.push([dateFromKey_(p.day), p.merch, p.region, p.dbCode, 0, p.total, p.display, p.regular, 0, 0, 0,
+      checkins[key] || '', '', '', 0, 0, 0, convCount[key] || 0, 0]);
   });
   writeWindow_(TAB.SUMMARY, SUMMARY_HEADERS, summary, startKey, 0, 1, {
     1: 'yyyy-mm-dd', 12: 'h:mm AM/PM', 13: 'h:mm AM/PM', 14: 'h:mm AM/PM', 15: '0.00'
@@ -194,6 +237,13 @@ function nextDay_(key) {
 function writeWindow_(tab, headers, newRows, startKey, dateIdx, sortIdx, formats) {
   const sh = sheet_(tab);
   const width = headers.length;
+  // A column added in a newer version (e.g. Planned Visited) gets its heading even if Setup was not run again.
+  if (sh.getMaxColumns() < width) sh.insertColumnsAfter(sh.getMaxColumns(), width - sh.getMaxColumns());
+  const head = sh.getRange(1, 1, 1, width).getValues()[0].map(norm_);
+  const firstEmpty = head.indexOf('');
+  if (firstEmpty >= 0 && head.slice(firstEmpty).every(h => !h) && head.slice(0, firstEmpty).every((h, i) => h === headers[i])) {
+    sh.getRange(1, firstEmpty + 1, 1, width - firstEmpty).setValues([headers.slice(firstEmpty)]).setFontWeight('bold').setBackground('#f3f3f3');
+  }
   const old = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, width).getValues() : [];
   const keep = old.filter(r => {
     const k = cellDayKey_(r[dateIdx]);

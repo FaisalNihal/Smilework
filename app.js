@@ -50,10 +50,25 @@
   const WEEK_ORDER = [6, 0, 1, 2, 3, 4, 5];
   function dayIndexes(text) {
     const s = String(text || '').toLowerCase();
+    if (isDateKey(s)) return [];                 // a date, not a weekday name
     const out = [];
     DAY_WORDS.forEach((w, i) => { if (s.indexOf(w[0]) >= 0 || s.indexOf(w[1]) >= 0) out.push(i); });
     return out;
   }
+  /* Date-wise PJP: the server sends Visit Day as 'yyyy-MM-dd'. */
+  const isDateKey = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
+  const dateKeyOf = d => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  const dateOfKey = k => { const p = k.split('-').map(Number); return new Date(p[0], p[1] - 1, p[2]); };
+  const dateShort = k => dateOfKey(k).toLocaleDateString('bn-BD', { day: 'numeric', month: 'long', weekday: 'long' });
+  const ORD_BN = ['১ম', '২য়', '৩য়', '৪র্থ', '৫ম', '৬ষ্ঠ'];
+  /** True when the PJP uses real dates (any row has a date). Old weekday PJPs return false. */
+  const isDatePjp = () => pjpList().some(o => isDateKey(o.visitDay));
+  /** Visit number of an outlet on a date: its 1st, 2nd... planned date this month. 0 if not planned that day. */
+  function visitNo(code, key) {
+    const dates = Array.from(new Set(pjpList().filter(o => o.code === code && isDateKey(o.visitDay)).map(o => o.visitDay))).sort();
+    return dates.indexOf(key) + 1;
+  }
+  const visitTag = n => n ? '<span class="chip visit" style="padding:0 8px">' + (ORD_BN[n - 1] || bn(n) + 'ম') + ' ভিজিট</span>' : '';
 
   const ICON = {
     today: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/><path d="M8.5 14.5l2 2 4-4"/></svg>',
@@ -186,6 +201,7 @@
     pick: null, capture: null, result: null,
     f: { region: '', db: '', route: '', q: '' },
     day: null,
+    dayDate: '',
     photos: null, photosMonth: monthKey(new Date()), photosLoading: false,
     progressFilter: 'all',
     conv: { pick: null, capture: null, result: null, filter: 'todo', route: '', q: '' },
@@ -536,16 +552,30 @@
     const startT = ci && (!first || ci < first) ? ci : first;
     const mins = startT && last ? Math.max(0, Math.round((last - startT) / 60000)) : 0;
 
-    const days = Array.from(new Set(mine.map(o => o.visitDay).filter(Boolean)));
-    days.sort((a, b) => WEEK_ORDER.indexOf((dayIndexes(a)[0] ?? 9)) - WEEK_ORDER.indexOf((dayIndexes(b)[0] ?? 9)));
-    if (state.day === null || (days.length && days.indexOf(state.day) < 0)) {
-      state.day = days.find(d => dayIndexes(d).indexOf(now.getDay()) >= 0) || '';
+    const byDate = isDatePjp();
+    const todayKey = dateKeyOf(now);
+    let days = [], list, pickKey = '';
+    if (byDate) {
+      // Date-wise PJP: show the outlets planned for the picked date (today by default).
+      if (!isDateKey(state.dayDate)) state.dayDate = todayKey;
+      pickKey = state.dayDate;
+      list = uniqueOutlets(mine.filter(o => o.visitDay === pickKey));
+    } else {
+      // Weekday PJP (old format): unchanged.
+      days = Array.from(new Set(mine.map(o => o.visitDay).filter(Boolean)));
+      days.sort((a, b) => WEEK_ORDER.indexOf((dayIndexes(a)[0] ?? 9)) - WEEK_ORDER.indexOf((dayIndexes(b)[0] ?? 9)));
+      if (state.day === null || (days.length && days.indexOf(state.day) < 0)) {
+        state.day = days.find(d => dayIndexes(d).indexOf(now.getDay()) >= 0) || '';
+      }
+      list = uniqueOutlets(state.day ? mine.filter(o => o.visitDay === state.day) : mine);
     }
-    const list = uniqueOutlets(state.day ? mine.filter(o => o.visitDay === state.day) : mine);
-    const done = list.filter(o => doneToday(o.code)).length;
+    // The red card always counts today's own plan, even while another date is picked below.
+    const heroList = byDate ? uniqueOutlets(mine.filter(o => o.visitDay === todayKey)) : list;
+    const done = heroList.filter(o => doneToday(o.code)).length;
 
-    let h = '<section class="hero"><div class="top">' + ring(done, list.length) +
-        '<div><h1>আজ</h1><div class="date">' + esc(dateLong(now)) + '</div><div class="date">' + bn(list.length - done) + 'টি আউটলেট বাকি</div></div></div>' +
+    let h = '<section class="hero"><div class="top">' + ring(done, heroList.length) +
+        '<div><h1>আজ</h1><div class="date">' + esc(dateLong(now)) + '</div><div class="date">' +
+        (byDate && !heroList.length ? 'আজ PJP-তে আউটলেট নেই' : bn(heroList.length - done) + 'টি আউটলেট বাকি') + '</div></div></div>' +
         '<div class="stats4">' +
           '<div><b>' + (ci ? timeOf(ci.toISOString()) : '--:--') + '</b><span>শুরু</span></div>' +
           '<div><b>' + (first ? timeOf(first.toISOString()) : '--:--') + '</b><span>প্রথম ছবি</span></div>' +
@@ -554,6 +584,29 @@
         '</div>' +
         (!ci ? '<button type="button" class="btn white block" data-act="checkin">দিন শুরু করুন</button>' : '') +
       '</section>';
+
+    if (byDate) {
+      const isToday = pickKey === todayKey;
+      h += '<div class="datehead"><h2>' + (isToday ? 'আজকের আউটলেট' : 'এই দিনের আউটলেট') + '</h2>' +
+        '<span class="muted small num">' + bn(list.length) + 'টি</span></div>' +
+        '<div class="daynav">' +
+          '<button type="button" class="btn line small" data-act="dayStep" data-step="-1" aria-label="আগের দিন">‹</button>' +
+          '<label class="input datepick"><span>' + esc(dateShort(pickKey)) + '</span>' +
+            '<input type="date" id="dayDate" data-change="dayDate" value="' + esc(pickKey) + '" aria-label="ভিজিটের তারিখ বাছুন"></label>' +
+          '<button type="button" class="btn line small" data-act="dayStep" data-step="1" aria-label="পরের দিন">›</button>' +
+          (isToday ? '' : '<button type="button" class="btn line small" data-act="dayToday">আজ</button>') +
+        '</div>';
+      if (!list.length) {
+        const monthHasPlan = mine.some(o => isDateKey(o.visitDay) && o.visitDay.slice(0, 7) === pickKey.slice(0, 7));
+        h += '<div class="empty"><p><b>' + esc(dateShort(pickKey)) + '</b><br>' +
+          (monthHasPlan ? 'এই তারিখে আপনার PJP-তে কোনো আউটলেট নেই।'
+                        : 'এই মাসের PJP এখনো আসেনি। অফিসে জানান।') +
+          '</p><p class="muted small">অন্য আউটলেটের ছবি "ছবি" ট্যাব থেকে তুলতে পারবেন।</p></div>';
+      } else {
+        h += outletRows(list, true, o => visitTag(visitNo(o.code, pickKey)));
+      }
+      return h;
+    }
 
     h += '<div class="datehead"><h2>আজকের আউটলেট</h2>' +
       (days.length > 1 ? '<select class="input" id="daySel" data-change="day" aria-label="ভিজিটের দিন" style="width:auto;min-height:38px;padding:6px 10px">' +
@@ -582,7 +635,7 @@
     return s + '<small>' + bn(Math.min(n, max)) + '/' + bn(max) + '</small></span>';
   }
 
-  function outletRows(list, groupByRoute) {
+  function outletRows(list, groupByRoute, extraTag) {
     const limit = 80;
     let shown = list;
     let more = 0;
@@ -593,7 +646,7 @@
       return '<button type="button" class="outlet' + (disp ? ' disp' : '') + '" data-act="pick" data-code="' + esc(o.code) + '"' + (full ? ' disabled' : '') + '>' +
         '<span class="name">' + esc(o.name) + '</span>' +
         '<span class="side">' + pips(n) + (doneToday(o.code) ? '<span class="today-tick">✓ আজ</span>' : '') + '</span>' +
-        '<span class="meta">' + esc(o.code) + typeTag(o) + premiumTag(o.code) + '</span>' +
+        '<span class="meta">' + esc(o.code) + (extraTag ? extraTag(o) : '') + typeTag(o) + premiumTag(o.code) + '</span>' +
         '</button>';
     };
     let h = '';
@@ -646,7 +699,10 @@
     let list = uniqueOutlets(pjpList()).filter(o => (!f.region || o.region === f.region) && (!f.db || o.dbName === f.db) && (!f.route || o.route === f.route) &&
       (!q || o.name.toLowerCase().indexOf(q) >= 0 || o.code.toLowerCase().indexOf(q) >= 0));
     if (isMerch()) {
-      const todayFirst = o => dayIndexes(o.visitDay).indexOf(now.getDay()) >= 0 ? 0 : 1;
+      // Today's planned outlets first: by date (date-wise PJP, any of the outlet's rows) or by weekday (old PJP).
+      const todayKey = dateKeyOf(now);
+      const plannedToday = new Set(pjpList().filter(o => o.visitDay === todayKey).map(o => o.code));
+      const todayFirst = o => (plannedToday.has(o.code) || dayIndexes(o.visitDay).indexOf(now.getDay()) >= 0) ? 0 : 1;
       list = list.slice().sort((a, b) => todayFirst(a) - todayFirst(b));
     }
     if (!list.length) return '<div class="empty"><p>কোনো আউটলেট পাওয়া যায়নি</p></div>';
@@ -1096,6 +1152,12 @@
       render(); window.scrollTo(0, 0);
     },
     unpick() { state.pick = null; render(); },
+    dayStep(el) {
+      const d = dateOfKey(isDateKey(state.dayDate) ? state.dayDate : dateKeyOf(new Date()));
+      d.setDate(d.getDate() + Number(el.dataset.step || 0));
+      state.dayDate = dateKeyOf(d); render();
+    },
+    dayToday() { state.dayDate = dateKeyOf(new Date()); render(); },
     async camera() {
       const o = outletByCode(state.pick);
       if (!o) return;
@@ -1242,6 +1304,7 @@
       } catch (e) { toast(e.message); }
     },
     day(el) { state.day = el.value; render(); },
+    dayDate(el) { if (isDateKey(el.value)) { state.dayDate = el.value; render(); } },
     fRegion(el) { state.f.region = el.value; state.f.db = ''; state.f.route = ''; render(); },
     fDb(el) { state.f.db = el.value; state.f.route = ''; render(); },
     fRoute(el) { state.f.route = el.value; render(); },
@@ -1306,6 +1369,8 @@
 
   /* ======================= events ======================= */
   document.addEventListener('click', e => {
+    // Tap anywhere on the Bangla date box opens the phone's calendar (computers need showPicker).
+    if (e.target.id === 'dayDate' && typeof e.target.showPicker === 'function') { try { e.target.showPicker(); } catch (err) { /* opens natively */ } }
     const t = e.target.closest('[data-act]');
     if (!t || t.disabled) return;
     const fn = actions[t.dataset.act];

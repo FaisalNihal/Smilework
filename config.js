@@ -16,6 +16,6 @@ window.APP_CONFIG = {
   // 1600 / 0.8 is sharper for small packs but about twice the size.
   PHOTO_MAX_SIDE: 1280,
   PHOTO_QUALITY: 0.75,
-  APP_VERSION: '2.1.0',
+  APP_VERSION: '2.1.1',
   MEDIAPIPE_VERSION: '1.2.3'
 };

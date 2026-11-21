@@ -186,7 +186,7 @@ function adminStats_() {
     counts[r.code] = (counts[r.code] || 0) + 1;
   });
   const s = getSettings_();
-  const teamCodes = pjpRows_().filter(o => inTeamScope_(o, s)).map(o => o.code);
+  const teamCodes = Array.from(new Set(pjpRows_().filter(o => inTeamScope_(o, s)).map(o => o.code)));   // each outlet once (date-wise PJP lists it twice)
   const teamCounts = {};
   rows.forEach(r => {
     if (r.month !== month || r.role !== 'SR' || !isCounted_(r, rejected)) return;

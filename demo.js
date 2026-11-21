@@ -96,7 +96,10 @@
   function DemoApi() {
     const scene = DemoScene();
     const today = new Date();
-    const day = i => DAY_NAMES[(today.getDay() + i) % 7];
+    // Date-wise PJP like the real one: each outlet twice, 14 days apart; route offset 0 = planned today.
+    const dkey = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    const plus = i => { const d = new Date(today); d.setDate(d.getDate() + i); return dkey(d); };
+    const day = i => [today.getDate() + i - 14 >= 1 ? plus(i - 14) : plus(i + 14), plus(i)].sort();
     const mk = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
     const month = mk(today);
     const users = { 'Rahim Uddin': 'Merchandiser', 'Karim Hossain': 'Merchandiser', 'Admin': 'Admin' };
@@ -113,19 +116,19 @@
       const count = smt ? 4 : ri < 3 ? 6 : 5;
       for (let i = 0; i < count; i++) {
         const k = n++;
-        pjp.push({
+        r[2].forEach(visitDay => pjp.push({
           region: smt ? 'Dhaka South' : 'Dhaka North', territory: smt ? 'Gulshan' : ri < 3 ? 'Mirpur' : 'Uttara',
           dbCode: smt ? 'DB2001' : ri < 3 ? 'DB1021' : 'DB1034',
           dbName: smt ? 'Gulshan Distribution' : ri < 3 ? 'Mirpur Traders' : 'Uttara Distribution',
           code: (smt ? 'SMT' : 'BDC') + (10230 + k),
           name: smt ? ['Shwapno Gulshan-1', 'Agora Gulshan', 'Unimart', 'Meena Bazar Banani', 'Shwapno Banani', 'Lavender Super Store', 'Daily Shopping', 'Prince Bazar'][i + (ri - 5) * 4] : SHOPS[k % SHOPS.length],
-          slab: ['Gold', 'Silver', 'Bronze'][k % 3], routeCode: r[1], route: r[0], visitDay: r[2], merch: r[3],
+          slab: ['Gold', 'Silver', 'Bronze'][k % 3], routeCode: r[1], route: r[0], visitDay, merch: r[3],
           status: smt || k % 3 === 0 ? 'Display' : 'Regular', unit: smt ? 'SMT' : ['DCC', 'ROB'][k % 2]
-        });
+        }));
       }
     });
     const counts = {};
-    pjp.forEach((o, i) => { counts[o.code] = i % 4 === 0 ? 2 : i % 4 === 1 ? 1 : i % 4 === 2 ? 1 : 0; });
+    Array.from(new Set(pjp.map(o => o.code))).forEach((code, i) => { counts[code] = i % 4 === 0 ? 2 : i % 4 === 1 ? 1 : i % 4 === 2 ? 1 : 0; });
 
     const iso = (h, m, dayOffset) => { const d = new Date(today); d.setDate(d.getDate() - (dayOffset || 0)); d.setHours(h, m, 0, 0); return d.toISOString(); };
     const photos = [];
@@ -138,7 +141,7 @@
         premiumPresence: 'Not checked', notes: '', thumb: scene.snapshot(40 + (photos.length * 7) % 25, isDisp(o) ? 'Display' : 'Regular')
       }, opts || {}));
     };
-    const rahim = pjp.filter(o => o.merch === 'Rahim Uddin');
+    const rahim = pjp.filter((o, i) => o.merch === 'Rahim Uddin' && pjp.findIndex(x => x.code === o.code) === i);
     addPhoto(rahim[0], 9, 41);
     addPhoto(rahim[1], 10, 18);
     addPhoto(rahim[4], 16, 5, { daysAgo: 2, dupStatus: 'Flagged', status: 'Pending review', dupReason: 'যাচাই করা আউটলেট লোকেশন থেকে 240 মিটার দূরে' });
@@ -306,7 +309,7 @@
       if (a === 'newOutlet') return wait({ ok: true, message: 'নতুন আউটলেট সেভ হয়েছে' }, 700);
       if (a === 'adminStats') {
         const byMerch = {};
-        pjp.forEach(o => { const k = o.merch || 'TM/SR (SMT)'; (byMerch[k] = byMerch[k] || []).push(o.code); });
+        pjp.forEach(o => { const k = o.merch || 'TM/SR (SMT)'; (byMerch[k] = byMerch[k] || []); if (byMerch[k].indexOf(o.code) < 0) byMerch[k].push(o.code); });
         const todays = photos.filter(p => new Date(p.uploadedAt || p.ts).toDateString() === todayKey);
         return wait({
           ok: true,
